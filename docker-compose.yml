@@ -1,0 +1,131 @@
+# docker-compose.yml
+# Orquesta 3 servicios: FastAPI (api), PostgreSQL (db), Redis (cache)
+# Ejecutar: docker-compose up -d
+# Ver logs: docker-compose logs -f api
+# Parar: docker-compose down
+
+version: '3.9'
+
+services:
+  # ============================================
+  # SERVICIO 1: FastAPI
+  # ============================================
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: marketplace-api
+    # Puerto externo:interno. Accesible en http://localhost:8000
+    ports:
+      - "8000:8000"
+    # Variables de entorno dentro del container
+    environment:
+      # Base de datos
+      DATABASE_URL: postgresql://marketplace_user:marketplace_password@db:5432/marketplace
+      
+      # Redis
+      REDIS_URL: redis://cache:6379/0
+      
+      # Clerk (llenarás con tu clave real en .env)
+      CLERK_SECRET_KEY: ${CLERK_SECRET_KEY:-sk_test_placeholder}
+      
+      # FastAPI
+      ENVIRONMENT: development
+      LOG_LEVEL: debug
+      
+    # Reinicia automáticamente si falla
+    restart: unless-stopped
+    
+    # Espera a que PostgreSQL esté listo
+    depends_on:
+      db:
+        condition: service_healthy
+    
+    # Conecta a la red Docker interna (por defecto se crea automáticamente)
+    networks:
+      - marketplace-network
+    
+    # Volumen para código vivo (hot reload)
+    volumes:
+      - .:/app
+    
+    # Comando para ejecutar. Overridea CMD del Dockerfile
+    command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
+  
+  # ============================================
+  # SERVICIO 2: PostgreSQL
+  # ============================================
+  db:
+    image: postgres:15-alpine
+    container_name: marketplace-db
+    
+    environment:
+      # Credenciales (DEBEN coincidir con DATABASE_URL arriba)
+      POSTGRES_USER: marketplace_user
+      POSTGRES_PASSWORD: marketplace_password
+      POSTGRES_DB: marketplace
+    
+    # Puerto: 5432 es el estándar de PostgreSQL
+    # NO lo exponemos a localhost (sólo la red Docker puede acceder)
+    ports:
+      - "5432:5432"
+    
+    # Healthcheck: Docker espera a que PostgreSQL esté listo
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U marketplace_user"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    
+    volumes:
+      # Persistencia: los datos de PostgreSQL viven aquí
+      # marketplace_data es un volumen Docker (manejado por Docker automáticamente)
+      - marketplace_data:/var/lib/postgresql/data
+    
+    networks:
+      - marketplace-network
+    
+    restart: unless-stopped
+  
+  # ============================================
+  # SERVICIO 3: Redis
+  # ============================================
+  cache:
+    image: redis:7-alpine
+    container_name: marketplace-cache
+    
+    # Puerto estándar de Redis
+    ports:
+      - "6379:6379"
+    
+    # Sin persistencia (por ahora). Si quieres persistencia:
+    # command: redis-server --appendonly yes
+    command: redis-server
+    
+    volumes:
+      # Sin volumen persistente (Redis es sólo cache)
+      # Si quieres persistencia, descomenta línea de arriba (--appendonly yes)
+      - null
+    
+    networks:
+      - marketplace-network
+    
+    restart: unless-stopped
+
+# ============================================
+# VOLÚMENES
+# ============================================
+volumes:
+  marketplace_data:
+    # Driver por defecto (local filesystem en la host)
+    driver: local
+
+# ============================================
+# REDES
+# ============================================
+networks:
+  marketplace-network:
+    driver: bridge
+    # Esto permite que los servicios se comuniquen por nombre de servicio:
+    # api puede alcanzar a db:5432
+    # api puede alcanzar a cache:6379
