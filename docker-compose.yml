@@ -4,8 +4,6 @@
 # Ver logs: docker-compose logs -f api
 # Parar: docker-compose down
 
-version: '3.9'
-
 services:
   # ============================================
   # SERVICIO 1: FastAPI
@@ -102,10 +100,10 @@ services:
     # command: redis-server --appendonly yes
     command: redis-server
     
-    volumes:
+    # volumes:
       # Sin volumen persistente (Redis es sólo cache)
       # Si quieres persistencia, descomenta línea de arriba (--appendonly yes)
-      - null
+    #  - null
     
     networks:
       - marketplace-network
